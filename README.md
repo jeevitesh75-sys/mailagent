@@ -58,7 +58,7 @@ Send a question from another email address to your Gmail, for example "What are 
 | Name | Meaning |
 |---|---|
 | `MODE` | `draft` (you approve) or `send` (automatic). Anything else counts as `draft` |
-| `GROQ_MODEL` | Default `llama-3.1-8b-instant`. If the check page says the model is not accepted, pick a model shown in your Groq console |
+| `GROQ_MODEL` | Default `openai/gpt-oss-20b`. Groq changes its model list. If the check page says the model is not accepted, pick one from console.groq.com/docs/models |
 | `UNKNOWN_ACTION` | `flag` (default) leaves unanswerable emails for you. `holding` (send mode only) sends "we received it and will get back to you" |
 | `MAX_PER_RUN` | Emails answered per run. Default 5 |
 | `MAX_PER_SENDER_PER_DAY` | Replies to one person per day. Default 2 |
