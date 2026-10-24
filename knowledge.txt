@@ -1,0 +1,11 @@
+Replace everything in this file with your own business answers. The AI uses ONLY what is written here.
+
+About us: [Your business name] sells [what you sell].
+Prices: [Product 1] costs Rs [price]. [Product 2] costs Rs [price].
+Timings: Open [days] from [time] to [time].
+Location: [address or "online only"].
+How to order: [steps, and the link or phone number to use].
+Payment: [UPI / cash / card].
+Delivery: [areas, time, charges].
+Refunds and returns: [your policy].
+Contact: [email or phone to give customers when needed].

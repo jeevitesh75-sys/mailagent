@@ -1,0 +1,12 @@
+[build]
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  included_files = ["knowledge.txt"]
+
+# The agent wakes up on this schedule (UTC). Change the first number to
+# change how often: */10 = every 10 minutes, */5 = every 5 minutes.
+[functions."agent"]
+  schedule = "*/10 * * * *"
