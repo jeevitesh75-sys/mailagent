@@ -17,10 +17,11 @@ function world(msgs, sentTo = []) {
     constructor(o) { w.imapOpts = o; this.current = ""; }
     async connect() { if (w.badLogin) throw Object.assign(new Error("Invalid credentials"), { authenticationFailed: true }); }
     async logout() { w.loggedOut++; }
-    async list() { return [{ path: "[Gmail]/Drafts", specialUse: "\\Drafts" }, { path: "[Gmail]/Sent Mail", specialUse: "\\Sent" }]; }
+    async list() { return [{ path: "[Gmail]/Drafts", specialUse: "\\Drafts" }, { path: "[Gmail]/Sent Mail", specialUse: "\\Sent" }, { path: "[Gmail]/All Mail", specialUse: "\\All" }]; }
     async getMailboxLock(p) { this.current = p; return { release() {} }; }
     async search(q) { w.searches.push([this.current, q.gmailRaw]); return this.current === "INBOX" ? w.msgs.map(m => m.uid) : sentTo.map((_, i) => 1000 + i); }
-    async *fetch() { for (const t of sentTo) yield { envelope: { to: [{ address: t }] } }; }
+    async *fetch(uids, q) { if (this.current === "INBOX" || /All/.test(this.current)) { for (const u of uids) yield { envelope: { from: [{ name: "Ravi", address: "ravi@example.com" }], subject: "Hello " + u, date: "2026-10-24T08:00:00Z" } }; return; }
+      for (const t of sentTo) yield { envelope: { to: [{ address: t }], subject: "Re: Price?", date: new Date(w.nowReal || Date.now()).toISOString() }, headers: Buffer.from(q.headers ? "Auto-Submitted: auto-replied\r\n" : "") }; }
     async fetchOne(uid) { return w.msgs.find(m => m.uid === uid); }
     async messageFlagsAdd(uid, f, o) { (o.useLabels ? w.labels : w.flags)[uid] = ((o.useLabels ? w.labels : w.flags)[uid] || []).concat(f); }
     async append(path, raw, flags) { w.appended.push({ path, raw: raw.toString(), flags }); }
@@ -176,6 +177,27 @@ const go = (w, env = {}) => core.run({ ...ENV, ...env }, w);
     const w = world([mkMsg(13, {})]); w.groqStatus = 404;
     const r = await go(w, { MODE: "send" });
     assert.ok(/GROQ_MODEL/.test(r.error), r.error); assert.strictEqual(w.labels[13], undefined); assert.strictEqual(w.mailed.length, 0);
+  });
+
+  await test("dashboard numbers: replies sent by the agent, plus counts per label, from Gmail only", async () => {
+    const w = world([mkMsg(1, {}), mkMsg(2, {})], ["ravi@example.com", "meena@example.com"]); w.nowReal = Date.now(); w.now = () => Date.now();
+    const s = await core.stats(ENV, w);
+    assert.strictEqual(s.mode, "draft"); assert.strictEqual(s.account, "shop@gmail.com");
+    assert.strictEqual(s.replies.last7d, 2); assert.strictEqual(s.replies.last24h, 2); assert.ok(s.replies.items[0].to.includes("@example.com") && s.replies.items[0].subject === "Re: Price?");
+    for (const k of ["answered", "drafted", "needsYou", "skipped"]) assert.ok(typeof s.labels[k].count === "number" && Array.isArray(s.labels[k].items), k);
+    assert.ok(w.searches.some(x => /All Mail/.test(x[0]) && x[1] === "label:AI-Needs-You"));
+    assert.strictEqual(w.loggedOut, 1);
+    const none = world([], []); const s0 = await core.stats(ENV, none); assert.strictEqual(s0.replies.last7d, 0);
+  });
+
+  await test("stats address needs the key, and the dashboard page never builds HTML from email text", async () => {
+    const { endpoint } = require("./lib/endpoints"); const w = world([], ["a@x.com"]); w.nowReal = Date.now();
+    assert.strictEqual((await endpoint("stats", { key: "" }, ENV, () => w)).status, 401);
+    const r = await endpoint("stats", { key: ENV.ADMIN_KEY }, ENV, () => w); assert.strictEqual(r.status, 200); assert.ok(r.body.labels);
+    const html = require("fs").readFileSync(__dirname + "/public/dashboard.html", "utf8");
+    assert.ok(!/innerHTML|insertAdjacentHTML|document\.write/.test(html), "email subjects are attacker controlled; use textContent only");
+    assert.ok(require("fs").readFileSync(__dirname + "/netlify.toml", "utf8").includes('from = "/api/*"'));
+    assert.strictEqual(typeof require("./api/stats"), "function");
   });
 
   await test("a bad Gmail login fails the run and selfTest explains it", async () => {

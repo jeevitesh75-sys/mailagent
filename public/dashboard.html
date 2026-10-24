@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Email agent dashboard</title>
+<style>
+:root{--brand:#5b5bf0;--ink:#14142b;--text:#2b2d42;--muted:#6b6f85;--line:#e6e7f0;--bg:#f6f7fb;--ok:#0f9d6b;--ok-bg:#e5f7ef;--warn:#b7791f;--warn-bg:#fff4dc;--bad:#d1344b;--bad-bg:#fdecef}
+@media(prefers-color-scheme:dark){:root{--ink:#f1f1fa;--text:#d8d9e8;--muted:#9a9db5;--line:#2a2c40;--bg:#12131f;--ok-bg:#103527;--warn-bg:#3a2d10;--bad-bg:#3b1620}.card{background:#1b1d2e!important}input{background:#12131f!important;color:var(--ink)!important}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:20px 16px 48px}
+h1{margin:6px 0 4px;font-size:26px;color:var(--ink);letter-spacing:-.02em}h2{font-size:17px;margin:26px 0 10px;color:var(--ink)}
+.muted{color:var(--muted)}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin:0 0 14px;box-shadow:0 6px 20px rgba(20,20,43,.05)}
+input{width:100%;font:inherit;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;margin:10px 0}
+button{font:inherit;font-weight:700;background:var(--brand);color:#fff;border:0;border-radius:12px;padding:12px 18px;cursor:pointer}
+button:disabled{opacity:.5}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}@media(min-width:620px){.grid{grid-template-columns:repeat(4,1fr)}}
+.stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center}
+@media(prefers-color-scheme:dark){.stat{background:#1b1d2e}}
+.stat b{display:block;font-size:28px;color:var(--ink);letter-spacing:-.02em}.stat span{font-size:12.5px;color:var(--muted);font-weight:600}
+.stat.ok b{color:var(--ok)}.stat.warn b{color:var(--warn)}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;background:var(--ok-bg);color:var(--ok)}.pill.d{background:var(--warn-bg);color:var(--warn)}
+ul{list-style:none;margin:0;padding:0}li{padding:11px 0;border-top:1px solid var(--line)}li:first-child{border-top:0}
+.who{font-weight:700;color:var(--ink);word-break:break-word}.sub{font-size:14.5px;word-break:break-word}.when{font-size:12.5px;color:var(--muted)}
+.msg{padding:12px 14px;border-radius:12px;background:var(--bad-bg);color:var(--bad);margin:12px 0;font-size:14.5px}
+</style></head><body><div class="wrap">
+<h1>Email agent</h1>
+<p class="muted">Your replies and what needs you. Private: needs your admin key.</p>
+<div class="card" id="gate">
+  <label for="key"><b>Admin key</b></label>
+  <input id="key" type="password" autocomplete="off" placeholder="Your ADMIN_KEY">
+  <button id="go" type="button">Open dashboard</button>
+  <div id="err" role="alert"></div>
+</div>
+<div id="board" hidden>
+  <p><span class="pill" id="mode"></span> <span class="muted" id="acct"></span></p>
+  <div class="grid">
+    <div class="stat ok"><b id="s24">0</b><span>Replies, last 24 hours</span></div>
+    <div class="stat ok"><b id="s7">0</b><span>Replies, last 7 days</span></div>
+    <div class="stat warn"><b id="sneed">0</b><span>Need you</span></div>
+    <div class="stat"><b id="sskip">0</b><span>Skipped (newsletters, bots)</span></div>
+  </div>
+  <h2>Replies the agent sent</h2><div class="card"><ul id="replies"></ul></div>
+  <h2>Waiting for you (the AI could not answer)</h2><div class="card"><ul id="need"></ul></div>
+  <h2 id="dh">Drafts saved</h2><div class="card"><ul id="drafts"></ul></div>
+  <p><button id="refresh" type="button">Refresh</button></p>
+</div></div>
+<script>
+// Email subjects come from other people, so every value is written with textContent (never HTML).
+const $ = id => document.getElementById(id);
+let KEY = "";
+const T = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; e.textContent = text; return e; };
+const when = iso => { try { return iso ? new Date(iso).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""; } catch { return ""; } };
+function fill(ul, items, who, empty) {
+  ul.replaceChildren(...(items.length ? items.map(i => { const li = document.createElement("li"); li.append(T("div", "who", who(i)), T("div", "sub", i.subject || "(no subject)"), T("div", "when", when(i.date))); return li; }) : [T("li", "muted", empty)]));
+}
+async function load() {
+  $("err").replaceChildren(); $("go").disabled = true;
+  try {
+    const r = await fetch("/api/stats", { headers: { Authorization: "Bearer " + KEY } });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) throw new Error("Wrong key");
+    if (!r.ok || d.error) throw new Error(d.error || "Something went wrong (" + r.status + ")");
+    $("mode").textContent = d.mode === "send" ? "Sends automatically" : "Saves drafts for you"; $("mode").className = "pill" + (d.mode === "send" ? "" : " d");
+    $("acct").textContent = d.account;
+    $("s24").textContent = d.replies.last24h; $("s7").textContent = d.replies.last7d;
+    $("sneed").textContent = d.labels.needsYou.count; $("sskip").textContent = d.labels.skipped.count;
+    fill($("replies"), d.replies.items, i => "To: " + i.to, "No replies sent in the last 7 days.");
+    fill($("need"), d.labels.needsYou.items, i => "From: " + i.from, "Nothing is waiting for you.");
+    fill($("drafts"), d.labels.drafted.items, i => "For: " + i.from, d.mode === "send" ? "Not used in automatic mode." : "No drafts yet.");
+    $("gate").hidden = true; $("board").hidden = false;
+    try { sessionStorage.setItem("k", KEY); } catch { /* private mode */ }
+  } catch (e) { $("err").replaceChildren(T("div", "msg", e.message)); }
+  $("go").disabled = false;
+}
+$("go").addEventListener("click", () => { KEY = $("key").value.trim(); if (KEY) load(); });
+$("key").addEventListener("keydown", e => { if (e.key === "Enter") $("go").click(); });
+$("refresh").addEventListener("click", load);
+try { const k = sessionStorage.getItem("k"); if (k) { KEY = k; load(); } } catch { /* ignore */ }
+</script></body></html>
