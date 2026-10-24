@@ -21,7 +21,7 @@ function world(msgs, sentTo = []) {
     async getMailboxLock(p) { this.current = p; return { release() {} }; }
     async search(q) { w.searches.push([this.current, q.gmailRaw]); return this.current === "INBOX" ? w.msgs.map(m => m.uid) : sentTo.map((_, i) => 1000 + i); }
     async *fetch(uids, q) { if (this.current === "INBOX" || /All/.test(this.current)) { for (const u of uids) yield { envelope: { from: [{ name: "Ravi", address: "ravi@example.com" }], subject: "Hello " + u, date: "2026-10-24T08:00:00Z" } }; return; }
-      for (const t of sentTo) yield { envelope: { to: [{ address: t }], subject: "Re: Price?", date: new Date(w.nowReal || Date.now()).toISOString() }, headers: Buffer.from(q.headers ? "Auto-Submitted: auto-replied\r\n" : "") }; }
+      for (const t of sentTo) yield { envelope: { to: [{ address: t }], subject: "Re: Price?", date: new Date(w.nowReal || Date.now()).toISOString() }, headers: Buffer.from(q.headers && !(w.manualSent || []).includes(t) ? "Auto-Submitted: auto-replied\r\n" : "") }; }
     async fetchOne(uid) { return w.msgs.find(m => m.uid === uid); }
     async messageFlagsAdd(uid, f, o) { (o.useLabels ? w.labels : w.flags)[uid] = ((o.useLabels ? w.labels : w.flags)[uid] || []).concat(f); }
     async append(path, raw, flags) { w.appended.push({ path, raw: raw.toString(), flags }); }
@@ -164,6 +164,14 @@ const go = (w, env = {}) => core.run({ ...ENV, ...env }, w);
     const r2 = await go(w2, { MODE: "send", DAILY_SEND_CAP: "2" });
     assert.strictEqual(w2.mailed.length, 0); assert.strictEqual(r2.flagged, 1);
     assert.ok(w2.searches.some(s => s[0] === "[Gmail]/Sent Mail"));
+  });
+
+  await test("mail you wrote yourself does not count toward the per-person limit, but still counts toward the account cap", async () => {
+    const w = world([mkMsg(3, { from: "ravi@example.com" })], ["ravi@example.com", "ravi@example.com", "ravi@example.com"]); w.manualSent = ["ravi@example.com"];
+    const r = await go(w, { MODE: "send" });
+    assert.strictEqual(r.sent, 1, "3 manual mails to this person must not block the agent");
+    const w2 = world([mkMsg(3, {})], ["a@x.com", "b@x.com"]); w2.manualSent = ["a@x.com", "b@x.com"];
+    const r2 = await go(w2, { MODE: "send", DAILY_SEND_CAP: "2" }); assert.strictEqual(r2.flagged, 1);
   });
 
   await test("Groq rate limit or bad key ends the run cleanly without losing the email", async () => {
